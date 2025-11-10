@@ -221,7 +221,7 @@ def download_model_from_release(model_path: Path, release_url: str, filename: st
 
         # Handle split files for large models
         if filename == "model.safetensors":
-            # Download all parts (each is a zip file)
+            # Download all parts (each is a zip file containing one part)
             base_url = release_url.rsplit('/', 1)[0]  # Remove filename from URL
             parts = []
             part_num = 1
@@ -230,7 +230,7 @@ def download_model_from_release(model_path: Path, release_url: str, filename: st
                 part_filename = f"model.safetensors.zip.part{part_num:02d}.zip"
                 part_url = f"{base_url}/{part_filename}"
                 part_zip_path = model_path.parent / part_filename
-                part_path = model_path.parent / f"model.safetensors.zip.part{part_num:02d}"
+                part_path = model_path.parent / f"model.safetensors.part{part_num:02d}"
 
                 try:
                     print(f"  Downloading part {part_num}...")
@@ -260,30 +260,80 @@ def download_model_from_release(model_path: Path, release_url: str, filename: st
                 print(f"❌ No model parts found at {base_url}")
                 return False
 
-            # Combine all parts into the final zip file
+            # Combine all parts into the final file
             print(f"  Combining {len(parts)} parts...")
-            zip_path = model_path.parent / "model.safetensors.zip"
-            with open(zip_path, 'wb') as outfile:
+            with open(model_path, 'wb') as outfile:
                 for part_path in parts:
                     with open(part_path, 'rb') as infile:
                         outfile.write(infile.read())
 
-            # Extract the zip file
-            print("  Extracting model file...")
-            import zipfile
-            with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-                zip_ref.extractall(model_path.parent)
-
-            # Clean up part files and zip
+            # Clean up part files
             for part_path in parts:
                 part_path.unlink()
-            zip_path.unlink()
 
             print(f"✅ Successfully downloaded and extracted {filename}")
             return True
 
+        elif filename == "model_2048.bin":
+            # Handle split files for line model too
+            base_url = release_url.rsplit('/', 1)[0]  # Remove filename from URL
+            parts = []
+            part_num = 1
+
+            while True:
+                part_filename = f"model_2048.bin.part{part_num:02d}.zip"
+                part_url = f"{base_url}/{part_filename}"
+                part_zip_path = model_path.parent / part_filename
+                part_path = model_path.parent / f"model_2048.bin.part{part_num:02d}"
+
+                try:
+                    print(f"  Downloading part {part_num}...")
+                    urllib.request.urlretrieve(part_url, part_zip_path)
+
+                    # Extract the part from the zip file
+                    import zipfile
+                    with zipfile.ZipFile(part_zip_path, 'r') as zip_ref:
+                        # Get the first (and only) file in the zip
+                        extracted_files = zip_ref.namelist()
+                        if extracted_files:
+                            with zip_ref.open(extracted_files[0]) as source, open(part_path, 'wb') as target:
+                                target.write(source.read())
+
+                    parts.append(part_path)
+                    # Clean up the zip file
+                    part_zip_path.unlink()
+                    part_num += 1
+                except urllib.error.HTTPError as e:
+                    if e.code == 404:
+                        # No more parts
+                        break
+                    else:
+                        raise e
+
+            if parts:
+                # Combine all parts into the final file
+                print(f"  Combining {len(parts)} parts...")
+                with open(model_path, 'wb') as outfile:
+                    for part_path in parts:
+                        with open(part_path, 'rb') as infile:
+                            outfile.write(infile.read())
+
+                # Clean up part files
+                for part_path in parts:
+                    part_path.unlink()
+
+                print(f"✅ Successfully downloaded and extracted {filename}")
+                return True
+            else:
+                # Try single file download as fallback
+                print("  No parts found, trying single file download...")
+                model_path.parent.mkdir(parents=True, exist_ok=True)
+                urllib.request.urlretrieve(release_url, model_path)
+                print(f"✅ Successfully downloaded {filename}")
+                return True
+
         else:
-            # Single file download (for line model)
+            # Single file download for other files
             model_path.parent.mkdir(parents=True, exist_ok=True)
             urllib.request.urlretrieve(release_url, model_path)
             print(f"✅ Successfully downloaded {filename}")
@@ -419,7 +469,7 @@ def load_models():
     # GitHub release URLs (update these with your actual release URLs)
     GITHUB_REPO = "HackLoading/CVD-project-VII"
     RELEASE_TAG = "v1.0.0"  # Update this to your release tag
-    
+
     base_release_url = f"https://github.com/{GITHUB_REPO}/releases/download/{RELEASE_TAG}"
 
     # --- Paths ---
@@ -434,19 +484,22 @@ def load_models():
 
     # --- Download models if not present ---
     print("🔄 Checking for model files...")
-    
-    # Download coarse model
-    coarse_release_url = f"{base_release_url}/model.safetensors"
-    if not download_model_from_release(coarse_model_path, coarse_release_url, "coarse model (model.safetensors)"):
-        st.error("❌ Failed to download coarse model. Please check your internet connection and try again.")
-        return None, None, None, device
-    
-    # Download line model
-    line_release_url = f"{base_release_url}/model_2048.bin"
-    line_download_success = download_model_from_release(line_model_path, line_release_url, "line model (model_2048.bin)")
-    if not line_download_success:
-        st.warning("⚠️ Line model download failed. Using untrained line model with pattern-based detection only.")
-        # Continue with untrained model instead of failing completely
+
+    # Download coarse model (with fallback to local)
+    coarse_download_success = True
+    if not coarse_model_path.exists():
+        coarse_release_url = f"{base_release_url}/model.safetensors"
+        coarse_download_success = download_model_from_release(coarse_model_path, coarse_release_url, "coarse model (model.safetensors)")
+        if not coarse_download_success:
+            print("⚠️ Coarse model download failed, will try to use local model if available")
+
+    # Download line model (with fallback to local)
+    line_download_success = True
+    if not line_model_path.exists():
+        line_release_url = f"{base_release_url}/model_2048.bin"
+        line_download_success = download_model_from_release(line_model_path, line_release_url, "line model (model_2048.bin)")
+        if not line_download_success:
+            print("⚠️ Line model download failed, will try to use local model if available")
 
     # --- Load Tokenizer ---
     try:
@@ -457,35 +510,54 @@ def load_models():
         return None, None, None, device
 
     # --- Load Coarse Model (Function-level VulBERTa) ---
-    try:
-        coarse_config = RobertaConfig.from_pretrained(str(coarse_dir))
-        coarse_model = RobertaForSequenceClassification.from_pretrained(
-            str(coarse_dir), config=coarse_config
-        )
-        coarse_model.to(device).eval()
-        print("✅ Coarse (function-level) model loaded.")
-    except Exception as e:
-        print(f"❌ Coarse model failed to load: {e}")
-        st.error(f"❌ Failed to load coarse model: {e}")
-        coarse_model = None
+    coarse_model = None
+    if coarse_model_path.exists():
+        try:
+            coarse_config = RobertaConfig.from_pretrained(str(coarse_dir))
+            coarse_model = RobertaForSequenceClassification.from_pretrained(
+                str(coarse_dir), config=coarse_config
+            )
+            coarse_model.to(device).eval()
+            print("✅ Coarse (function-level) model loaded.")
+        except Exception as e:
+            print(f"❌ Coarse model failed to load: {e}")
+            if coarse_download_success:
+                st.error(f"❌ Failed to load downloaded coarse model: {e}")
+            coarse_model = None
+    else:
+        print("❌ Coarse model file not found locally and download failed")
+        st.error("❌ Coarse model not available. Please check your internet connection or model files.")
 
     # --- Load Line Model (LineVul) ---
-    base_encoder = RobertaForSequenceClassification.from_pretrained(str(codebert_dir))
-    args = SimpleNamespace(device=device)
-    line_model = LineVulEncoder(base_encoder, coarse_config, tokenizer, args)
+    line_model = None
+    if coarse_model is not None:  # Only load line model if coarse model loaded successfully
+        base_encoder = RobertaForSequenceClassification.from_pretrained(str(codebert_dir))
+        args = SimpleNamespace(device=device)
+        line_model = LineVulEncoder(base_encoder, coarse_config, tokenizer, args)
 
-    if line_model_path.exists():
-        state_dict = torch.load(str(line_model_path), map_location=device)
-        missing, unexpected = line_model.load_state_dict(state_dict, strict=False)
-        print(f"✅ Line-level model loaded. Missing keys: {len(missing)}, Unexpected: {len(unexpected)}")
+        if line_model_path.exists():
+            try:
+                state_dict = torch.load(str(line_model_path), map_location=device)
+                missing, unexpected = line_model.load_state_dict(state_dict, strict=False)
+                print(f"✅ Line-level model loaded. Missing keys: {len(missing)}, Unexpected: {len(unexpected)}")
+            except Exception as e:
+                print(f"❌ Line model weights failed to load: {e}")
+                if line_download_success:
+                    st.warning(f"⚠️ Downloaded line model failed to load: {e}. Using untrained model.")
+                else:
+                    st.warning("⚠️ Line model weights not found or failed to load, using untrained model")
+        else:
+            print("⚠️ Line model weights not found, using untrained model")
+            if line_download_success:
+                st.warning("⚠️ Downloaded line model not found, using pattern-based detection only.")
+            else:
+                st.warning("⚠️ Line model download failed, using pattern-based detection only.")
+
+        line_model.to(device).eval()
     else:
-        print("⚠️ Line model weights not found, using untrained model")
-
-    line_model.to(device).eval()
+        print("❌ Skipping line model load due to coarse model failure")
 
     return coarse_model, line_model, tokenizer, device
-
-
 @torch.no_grad()
 def predict_coarse(code, model, tokenizer, device, max_len=512):
     """Predict function-level vulnerability."""
@@ -1096,11 +1168,11 @@ with st.sidebar:
 if not st.session_state.model_loaded:
     with st.spinner("🔄 Loading VulBERT models..."):
         coarse_model, line_model, tokenizer, device = load_models()
-        if coarse_model is not None and line_model is not None:
+        if coarse_model is not None:
             # Validate coarse model is properly trained
             with st.spinner("🔍 Validating coarse model accuracy..."):
                 validation_result = validate_model(coarse_model, tokenizer, device)
-            
+
             if validation_result["valid"]:
                 st.session_state.coarse_model = coarse_model
                 st.session_state.line_model = line_model
@@ -1124,7 +1196,11 @@ if not st.session_state.model_loaded:
                 st.session_state.model_valid = False
                 st.session_state.validation_result = validation_result
         else:
-            st.error("❌ Failed to load models. Please check the model paths.")
+            st.error("❌ Failed to load models. The app will not function properly.")
+            st.info("**Troubleshooting:**")
+            st.info("1. Check your internet connection for automatic model downloads")
+            st.info("2. Ensure model files exist in the expected directories")
+            st.info("3. Create GitHub release v1.0.0 with model files if not done yet")
             st.stop()
 
 # Main content
