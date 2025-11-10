@@ -468,7 +468,7 @@ def load_models():
 
     # GitHub release URLs (update these with your actual release URLs)
     GITHUB_REPO = "HackLoading/CVD-project-VII"
-    RELEASE_TAG = "v1.0.0"  # Update this to your release tag
+    RELEASE_TAG = "1.0.0"  # Update this to your release tag
 
     base_release_url = f"https://github.com/{GITHUB_REPO}/releases/download/{RELEASE_TAG}"
 
@@ -482,24 +482,20 @@ def load_models():
     print(f"[DEBUG] Coarse model path: {coarse_model_path}")
     print(f"[DEBUG] Line model path: {line_model_path}")
 
-    # --- Download models if not present ---
-    print("🔄 Checking for model files...")
+    # --- Download models (always attempt downloads, don't rely on local files) ---
+    print("🔄 Downloading models from GitHub releases...")
 
-    # Download coarse model (with fallback to local)
-    coarse_download_success = True
-    if not coarse_model_path.exists():
-        coarse_release_url = f"{base_release_url}/model.safetensors"
-        coarse_download_success = download_model_from_release(coarse_model_path, coarse_release_url, "coarse model (model.safetensors)")
-        if not coarse_download_success:
-            print("⚠️ Coarse model download failed, will try to use local model if available")
+    # Download coarse model (always attempt)
+    coarse_release_url = f"{base_release_url}/model.safetensors"
+    coarse_download_success = download_model_from_release(coarse_model_path, coarse_release_url, "coarse model (model.safetensors)")
+    if not coarse_download_success:
+        print("❌ Coarse model download failed")
 
-    # Download line model (with fallback to local)
-    line_download_success = True
-    if not line_model_path.exists():
-        line_release_url = f"{base_release_url}/model_2048.bin"
-        line_download_success = download_model_from_release(line_model_path, line_release_url, "line model (model_2048.bin)")
-        if not line_download_success:
-            print("⚠️ Line model download failed, will try to use local model if available")
+    # Download line model (always attempt)
+    line_release_url = f"{base_release_url}/model_2048.bin"
+    line_download_success = download_model_from_release(line_model_path, line_release_url, "line model (model_2048.bin)")
+    if not line_download_success:
+        print("❌ Line model download failed")
 
     # --- Load Tokenizer ---
     try:
