@@ -376,11 +376,9 @@ def load_models():
         st.error("❌ Failed to download coarse model. Please check your internet connection and try again.")
         return None, None, None, device
     
-    # Download line model
+    # Download line model (optional - app works without it)
     line_release_url = f"{base_release_url}/model_2048.bin"
-    if not download_model_from_release(line_model_path, line_release_url, "line model (model_2048.bin)"):
-        st.error("❌ Failed to download line model. Please check your internet connection and try again.")
-        return None, None, None, device
+    download_model_from_release(line_model_path, line_release_url, "line model (model_2048.bin)")
 
     # --- Load Tokenizer ---
     try:
@@ -415,6 +413,15 @@ def load_models():
 
         line_model.to(device).eval()
 
+    except FileNotFoundError:
+        print(f"⚠️ Line model weights not found at {line_model_path}, using untrained model")
+        # Create line model without pre-trained weights
+        base_encoder = RobertaForSequenceClassification.from_pretrained(str(codebert_dir))
+        args = SimpleNamespace(device=device)
+        line_model = LineVulEncoder(base_encoder, coarse_config, tokenizer, args)
+        line_model.to(device).eval()
+        print("✅ Line-level model created (untrained)")
+        
     except Exception as e:
         print(f"❌ Line model failed to load: {e}")
         st.error(f"❌ Failed to load line model: {e}")
