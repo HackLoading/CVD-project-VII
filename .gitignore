@@ -170,6 +170,8 @@ resource/**/*.h5
 # Allow essential model files for deployment (will be downloaded from releases)
 new_model/**/*.bin
 new_model/**/*.safetensors
+# Track the deployed line-level checkpoint via Git LFS
+!new_model/line_vul/checkpoint-best-f1/model_2048.bin
 
 # Model release files (uploaded to GitHub releases, not repository)
 model.safetensors.zip*
