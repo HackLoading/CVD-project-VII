@@ -540,9 +540,12 @@ def load_models():
         try:
             print("🔍 Loading line-level model...")
             # Load base encoder from local or HuggingFace
-            if codebert_dir.exists():
+            # Check if local directory has actual model weights, not just config/tokenizer files
+            if codebert_dir.exists() and has_hf_weights(codebert_dir):
+                print(f"📂 Loading base encoder from local {codebert_dir}...")
                 base_encoder = RobertaForSequenceClassification.from_pretrained(str(codebert_dir))
             else:
+                print("📥 Loading base encoder from HuggingFace microsoft/codebert-base...")
                 base_encoder = RobertaForSequenceClassification.from_pretrained("microsoft/codebert-base")
             
             args = SimpleNamespace(device=device)
