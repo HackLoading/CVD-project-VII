@@ -816,8 +816,8 @@ def debug_line_model_predictions(model, tokenizer, device, test_lines=None):
             prob_safe = float(probs[0, 0].item())
             prob_vul = float(probs[0, 1].item())
             
-            print(".4f")
-            print(".4f")
+            print(f"  Prob safe: {prob_safe:.4f}")
+            print(f"  Prob vulnerable: {prob_vul:.4f}")
             
             prediction = 'VULNERABLE' if prob_vul > prob_safe else 'SAFE'
             confidence = max(prob_safe, prob_vul)
