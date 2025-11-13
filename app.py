@@ -373,7 +373,7 @@ def load_models():
     # Download coarse model
     coarse_release_url = f"{base_release_url}/model.safetensors"
     if not download_model_from_release(coarse_model_path, coarse_release_url, "coarse model (model.safetensors)"):
-        st.error("❌ Failed to download coarse model. Please check your internet connection and try again.")
+        print("❌ Failed to download coarse model. File does not exist locally and download failed.")
         return None, None, None, device
     
     # Download line model (optional - app works without it)
@@ -385,21 +385,28 @@ def load_models():
         tokenizer = AutoTokenizer.from_pretrained(str(codebert_dir))
     except Exception as e:
         print(f"❌ Tokenizer failed to load: {e}")
-        st.error(f"❌ Failed to load tokenizer: {e}")
+        import traceback
+        print(traceback.format_exc())
         return None, None, None, device
 
     # --- Load Coarse Model (Function-level VulBERTa) ---
+    coarse_model = None
     try:
         coarse_config = RobertaConfig.from_pretrained(str(coarse_dir))
+        print(f"[DEBUG] Coarse config loaded. Architecture: {coarse_config.architectures}")
+        
+        # Try to load from pretrained directory (handles .safetensors automatically)
         coarse_model = RobertaForSequenceClassification.from_pretrained(
             str(coarse_dir), config=coarse_config
         )
         coarse_model.to(device).eval()
-        print("✅ Coarse (function-level) model loaded.")
+        print("✅ Coarse (function-level) model loaded successfully.")
     except Exception as e:
         print(f"❌ Coarse model failed to load: {e}")
-        st.error(f"❌ Failed to load coarse model: {e}")
-        coarse_model = None
+        print(f"[DEBUG] Error type: {type(e).__name__}")
+        import traceback
+        print(f"[DEBUG] Traceback: {traceback.format_exc()}")
+        return None, None, None, device
 
     # --- Load Line Model (LineVul) ---
     try:
@@ -1040,7 +1047,9 @@ with st.sidebar:
 if not st.session_state.model_loaded:
     with st.spinner("🔄 Loading VulBERT models..."):
         coarse_model, line_model, tokenizer, device = load_models()
-        if coarse_model is not None and line_model is not None:
+        
+        # Check if coarse model loaded (required) and tokenizer (required)
+        if coarse_model is not None and tokenizer is not None:
             # Validate coarse model is properly trained
             with st.spinner("🔍 Validating coarse model accuracy..."):
                 validation_result = validate_model(coarse_model, tokenizer, device)
@@ -1054,6 +1063,8 @@ if not st.session_state.model_loaded:
                 st.session_state.model_valid = True
                 st.session_state.validation_result = validation_result
                 st.success(f"✅ Models loaded and validated! (Coarse test accuracy: {validation_result['accuracy']:.0%})")
+                if line_model is None:
+                    st.info("ℹ️ Line-level model not available; using coarse-grained predictions only.")
             else:
                 st.warning(f"⚠️ Coarse model validation WARNING: Only {validation_result['accuracy']:.0%} accuracy on test cases")
                 st.info("The coarse model may not be properly trained. Details:")
@@ -1068,7 +1079,12 @@ if not st.session_state.model_loaded:
                 st.session_state.model_valid = False
                 st.session_state.validation_result = validation_result
         else:
-            st.error("❌ Failed to load models. Please check the model paths.")
+            error_msg = []
+            if coarse_model is None:
+                error_msg.append("❌ Coarse model failed to load")
+            if tokenizer is None:
+                error_msg.append("❌ Tokenizer failed to load")
+            st.error("\n".join(error_msg) + "\n\nPlease check model paths and try refreshing the page.")
             st.stop()
 
 # Main content
