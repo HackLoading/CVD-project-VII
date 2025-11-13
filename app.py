@@ -459,9 +459,18 @@ def load_models():
     """Load VulBERTa (coarse) and LineVul (fine-grained) models from local files or HuggingFace."""
     import torch
     from transformers import AutoTokenizer, RobertaForSequenceClassification, RobertaConfig
+    from transformers import logging as transformers_logging
     from Models.linevul_model import Model as LineVulEncoder
     from types import SimpleNamespace
     from pathlib import Path
+    import warnings
+
+    # Suppress transformers warnings about untrained classifier weights
+    # This is expected when loading base models for sequence classification
+    transformers_logging.set_verbosity_error()
+    warnings.filterwarnings("ignore", message=".*were not used when initializing.*")
+    warnings.filterwarnings("ignore", message=".*were not initialized from the model checkpoint.*")
+    warnings.filterwarnings("ignore", message=".*You should probably TRAIN this model.*")
 
     PROJECT_ROOT = Path.cwd()
     device = torch.device("cpu")
@@ -528,7 +537,7 @@ def load_models():
             )
             coarse_model.to(device).eval()
             print("✅ Coarse model loaded from HuggingFace (base model, not fine-tuned).")
-            st.info("ℹ️ Using base CodeBERT model. For better accuracy, fine-tuned model weights are recommended.")
+            st.info("ℹ️ Using base CodeBERT model without fine-tuning. Results may be less accurate than with fine-tuned weights.")
         except Exception as e:
             print(f"❌ Failed to load coarse model from HuggingFace: {e}")
             st.error(f"❌ Failed to load coarse model: {e}")
