@@ -574,6 +574,14 @@ def load_models():
 @torch.no_grad()
 def predict_coarse(code, model, tokenizer, device, max_len=512):
     """Predict function-level vulnerability."""
+    if model is None:
+        return {
+            'prediction': 'Unknown',
+            'label': -1,
+            'prob_safe': 0.5,
+            'prob_vulnerable': 0.5
+        }
+    
     model.eval()
     enc = tokenizer(code, max_length=max_len, padding='max_length', truncation=True, return_tensors='pt')
     ids = enc['input_ids'].to(device)
@@ -596,6 +604,42 @@ def predict_coarse(code, model, tokenizer, device, max_len=512):
 @torch.no_grad()
 def predict_lines(code, model, tokenizer, device, max_len=512):
     """Predict vulnerable lines using hybrid approach: ML model + pattern detection."""
+    if model is None:
+        # Fall back to pattern-only detection if model is not available
+        lines = code.split('\n')
+        scores = []
+        
+        # Common vulnerable patterns (case-insensitive)
+        vulnerable_patterns = [
+            r'\bstrcpy\s*\(',           # strcpy calls
+            r'\bgets\s*\(',             # gets calls
+            r'\bsprintf\s*\(',          # sprintf calls
+            r'\bscanf\s*\([^)]*%s',     # scanf with %s
+            r'\bcin\s*>>',              # C++ cin without bounds
+            r'\bfree\s*\([^)]+\)\s*;\s*[^/]*\*\s*\w+',  # free followed by pointer access
+            r'\bdelete\s*\[\]',         # delete[] (potential double free)
+            r'\bmalloc\s*\([^)]+\)\s*;\s*[^/]*\*\s*\w+\s*=.*\w+',  # malloc followed by unchecked access
+        ]
+        
+        import re
+        
+        for idx, line in enumerate(lines, start=1):
+            if not line.strip():
+                scores.append({'line_no': idx, 'code': line, 'prob_vul': 0.0})
+                continue
+            
+            # Pattern-based detection only
+            line_lower = line.lower().strip()
+            prob_vul = 0.0
+            for pattern in vulnerable_patterns:
+                if re.search(pattern, line_lower):
+                    prob_vul = 0.8  # High probability if pattern matches
+                    break
+            
+            scores.append({'line_no': idx, 'code': line, 'prob_vul': prob_vul})
+        
+        return {'all_lines': scores}
+    
     model.eval()
     lines = code.split('\n')
     scores = []
@@ -1280,6 +1324,8 @@ with col2:
 if st.button("🔍 Analyze Code", use_container_width=True):
     if not code_input.strip():
         st.warning("⚠️ Please enter some code to analyze!")
+    elif st.session_state.coarse_model is None or st.session_state.line_model is None:
+        st.error("❌ Models are not loaded. Please refresh the page or check the error messages above.")
     else:
         with st.spinner("🔄 Analyzing code..."):
             # Get predictions
